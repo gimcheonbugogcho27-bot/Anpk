@@ -1,4 +1,4 @@
-name: Upload ZIP and Build APK
+name: Build Android APK and Windows EXE
 
 on:
   workflow_dispatch:
@@ -10,7 +10,8 @@ permissions:
   contents: read
 
 jobs:
-  build:
+  android-apk:
+    name: Build Android APK
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -21,7 +22,6 @@ jobs:
           test -f class-social-project.zip
           mkdir -p extracted
           unzip -o class-social-project.zip -d extracted
-          # Copy the project files from the archive into the repository root.
           cp -a extracted/. .
           rm -rf extracted
           rm -f class-social-project.zip
@@ -43,6 +43,113 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: class-social-apk
+          name: 4-4-우리반-Android-APK
           path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+  windows-exe:
+    name: Build Windows EXE
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Create Windows app project
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force windows-app | Out-Null
+          @'
+          {
+            "name": "class-social-desktop",
+            "version": "1.0.0",
+            "description": "4-4 우리반 SNS desktop app",
+            "main": "main.cjs",
+            "private": true,
+            "scripts": {
+              "dist": "electron-builder --win nsis portable"
+            },
+            "devDependencies": {
+              "electron": "^35.0.0",
+              "electron-builder": "^26.0.12"
+            },
+            "build": {
+              "appId": "com.classsocial.desktop",
+              "productName": "4-4 우리반",
+              "directories": {
+                "output": "dist"
+              },
+              "files": [
+                "main.cjs",
+                "package.json"
+              ],
+              "win": {
+                "target": [
+                  "nsis",
+                  "portable"
+                ],
+                "artifactName": "4-4-우리반-${version}-${arch}.${ext}"
+              },
+              "nsis": {
+                "oneClick": false,
+                "allowToChangeInstallationDirectory": true
+              }
+            }
+          }
+          '@ | Set-Content -Encoding UTF8 windows-app/package.json
+          @'
+          const { app, BrowserWindow, shell } = require('electron');
+
+          function createWindow() {
+            const win = new BrowserWindow({
+              width: 1280,
+              height: 850,
+              minWidth: 800,
+              minHeight: 600,
+              autoHideMenuBar: true,
+              title: '4-4 우리반',
+              webPreferences: {
+                nodeIntegration: false,
+                contextIsolation: true,
+                sandbox: true
+              }
+            });
+
+            win.loadURL('https://sns-ovgo.onrender.com');
+
+            win.webContents.setWindowOpenHandler(({ url }) => {
+              if (url.startsWith('https://') || url.startsWith('http://')) {
+                shell.openExternal(url);
+              }
+              return { action: 'deny' };
+            });
+          }
+
+          app.whenReady().then(() => {
+            createWindow();
+            app.on('activate', () => {
+              if (BrowserWindow.getAllWindows().length === 0) createWindow();
+            });
+          });
+
+          app.on('window-all-closed', () => {
+            if (process.platform !== 'darwin') app.quit();
+          });
+          '@ | Set-Content -Encoding UTF8 windows-app/main.cjs
+
+      - name: Install dependencies and build EXE
+        working-directory: windows-app
+        run: |
+          npm install
+          npm run dist
+
+      - name: Upload Windows EXE files
+        uses: actions/upload-artifact@v4
+        with:
+          name: 4-4-우리반-Windows-EXE
+          path: windows-app/dist/*.exe
           if-no-files-found: error
